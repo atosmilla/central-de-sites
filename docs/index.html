@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https:; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'self'">
+  <meta name="theme-color" content="#171a21">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Central de Sites">
+  <title>Central de Sites</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icone.png">
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M10 7.5a11 11 0 1 0 12 0" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M16 3v12" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
+      <h1>Central de Sites</h1>
+    </div>
+    <nav class="abas" id="abas" hidden>
+      <button class="aba ativa" data-aba="sites">Sites</button>
+      <button class="aba" data-aba="historico">Histórico</button>
+    </nav>
+    <div class="conta" id="conta"></div>
+  </header>
+
+  <main>
+    <!-- Tela de entrada (token) -->
+    <section id="tela-entrada" class="entrada" hidden>
+      <h2>Entrar no painel</h2>
+      <p>O painel usa um <strong>token do GitHub</strong> para ligar e desligar os sites. Ele fica guardado <strong>só neste aparelho</strong>.</p>
+      <ol>
+        <li><a id="link-token" target="_blank" rel="noopener">Toque aqui para criar o token no GitHub</a>. Os campos já vêm preenchidos.</li>
+        <li>Lá, toque em <strong>Generate token</strong> (no fim da página) e copie o código <code>ghp_…</code>.</li>
+        <li>Volte aqui, cole abaixo e toque em <strong>Entrar</strong>.</li>
+      </ol>
+      <form id="form-entrada">
+        <input id="campo-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cole o token aqui (ghp_…)" required>
+        <button class="btn primario" type="submit">Entrar</button>
+      </form>
+      <p id="erro-entrada" class="erro" hidden></p>
+    </section>
+
+    <section id="aba-sites" hidden>
+      <div class="resumo">
+        <div class="cartao-num"><span id="n-total">0</span><small>sites</small></div>
+        <div class="cartao-num ok"><span id="n-ligados">0</span><small>no ar</small></div>
+        <div class="cartao-num off"><span id="n-desligados">0</span><small>desligados</small></div>
+        <div class="acoes-topo">
+          <input id="busca" type="search" placeholder="Buscar cliente ou site…">
+          <button class="btn" id="btn-atualizar" title="Atualizar status">↻ Atualizar</button>
+          <button class="btn primario" id="btn-adicionar">+ Adicionar site</button>
+        </div>
+      </div>
+      <div id="lista" class="lista"></div>
+    </section>
+
+    <section id="aba-historico" hidden>
+      <div class="tabela-rolagem">
+        <table class="tabela">
+          <thead><tr><th>Quando</th><th>Site</th><th>Ação</th><th>Resultado</th></tr></thead>
+          <tbody id="historico"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="modal">
+    <form method="dialog" id="modal-form">
+      <h2 id="modal-titulo"></h2>
+      <div id="modal-corpo"></div>
+      <div class="modal-botoes">
+        <button value="cancelar" class="btn" formnovalidate>Cancelar</button>
+        <button value="ok" class="btn primario" id="modal-ok">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
