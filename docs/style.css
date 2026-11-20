@@ -211,25 +211,22 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   .toast { max-width: none; }
 }
 
-/* Miniatura do site (o site real em escala reduzida: 1280x800 → 160x100) */
+/* Miniatura do site: print (640x400) gerado pelo robô do GitHub */
 .previa {
-  --largura: 160px; --escala: .125;
-  flex: none; position: relative; display: block; overflow: hidden;
-  width: var(--largura); aspect-ratio: 16 / 10;
+  flex: none; position: relative; display: grid; place-items: center; overflow: hidden;
+  width: 160px; aspect-ratio: 16 / 10;
   border-radius: 8px; border: 1px solid var(--borda); background: var(--bg);
 }
-.previa iframe {
-  position: absolute; top: 0; left: 0; width: 1280px; height: 800px; border: 0;
-  transform: scale(var(--escala)); transform-origin: 0 0;
-  pointer-events: none; background: #fff;
-}
+.previa img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.previa-inicial { font-size: 32px; font-weight: 700; color: var(--suave); }
 .previa::after { content: ""; position: absolute; inset: 0; transition: background .15s; }
 .previa:hover::after { background: rgb(255 255 255 / .08); }
 .site.desligado .previa { outline: 2px solid var(--off); outline-offset: -1px; }
 .chave { align-self: flex-start; }
 
 @media (max-width: 700px) {
-  .previa { --largura: 112px; --escala: .0875; }
+  .previa { width: 112px; }
+  .previa-inicial { font-size: 24px; }
   .site-nome .repo { display: none; }
   .site-nome h3 { margin-bottom: 6px; }
 }

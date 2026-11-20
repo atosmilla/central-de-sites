@@ -1,0 +1,48 @@
+# Tira um print de cada site publicado no GitHub Pages da conta e guarda as
+# imagens no branch "previas". O painel mostra essas imagens como miniatura.
+name: Miniaturas dos sites
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # a cada 6 horas
+  workflow_dispatch:         # botão "Atualizar prints" do painel
+
+permissions:
+  contents: write
+
+concurrency:
+  group: previas
+  cancel-in-progress: true
+
+jobs:
+  previas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar navegador
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: Tirar prints
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DONO: ${{ github.repository_owner }}
+          REPO_PAINEL: ${{ github.event.repository.name }}
+        run: node .github/scripts/previas.mjs saida
+
+      - name: Publicar no branch previas
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd saida
+          git init -q -b previas
+          git add .
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -q -m "Atualiza miniaturas"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" previas

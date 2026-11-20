@@ -1,5 +1,5 @@
 // Interface do painel Central de Sites (roda 100% no navegador).
-import { GitHub, Dados, verificarUrl } from './github.js';
+import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
@@ -139,15 +139,21 @@ function textoResposta(v) {
 
 const ROTULO = { ligado: 'No ar', desligado: 'Desligado', erro: 'Erro', 'sem-pages': 'Pages desativado' };
 
-// Miniatura ao vivo do site. O "sandbox" sem allow-same-origin isola o site
-// do painel (os sites ficam no mesmo domínio atosmilla.github.io e não podem
-// ler o token guardado no aparelho).
+// Miniatura: print do site gerado pelo robô do GitHub (workflow "Miniaturas dos sites"),
+// guardado no branch "previas" do repositório do painel. Imagem leve, sem rodar o site.
+const versaoPrevia = Math.floor(Date.now() / 600000); // renova o cache a cada 10 min
 function previa(s) {
-  if (!s.url) return '<div class="previa vazia" aria-hidden="true"></div>';
-  return `<a class="previa" href="${esc(s.url)}" target="_blank" rel="noopener" title="Abrir ${esc(s.cliente)}" aria-label="Abrir ${esc(s.cliente)}">
-    <iframe src="${esc(s.url)}" sandbox="allow-scripts" loading="lazy" tabindex="-1" aria-hidden="true" scrolling="no" referrerpolicy="no-referrer"></iframe>
-  </a>`;
+  const inicial = esc((s.cliente || s.repo).trim().charAt(0).toUpperCase());
+  const img = `https://raw.githubusercontent.com/${encodeURIComponent(dados.owner)}/${REPO_PAINEL}/previas/${encodeURIComponent(`${s.owner}__${s.repo}`)}.jpg?v=${versaoPrevia}`;
+  const conteudo = `<span class="previa-inicial" aria-hidden="true">${inicial}</span><img src="${img}" alt="" loading="lazy" decoding="async">`;
+  return s.url
+    ? `<a class="previa" href="${esc(s.url)}" target="_blank" rel="noopener" title="Abrir ${esc(s.cliente)}" aria-label="Abrir ${esc(s.cliente)}">${conteudo}</a>`
+    : `<div class="previa">${conteudo}</div>`;
 }
+// Sem print ainda (site novo ou repositório privado): fica a letra inicial.
+$('#lista').addEventListener('error', (ev) => {
+  if (ev.target.matches?.('.previa img')) ev.target.remove();
+}, true);
 
 // A busca só esconde/mostra cards, sem recarregar as miniaturas.
 function filtrar() {
@@ -389,6 +395,15 @@ document.querySelectorAll('.aba').forEach((b) => b.addEventListener('click', () 
 }));
 $('#busca').addEventListener('input', filtrar);
 $('#btn-atualizar').addEventListener('click', carregarSites);
+$('#btn-prints').addEventListener('click', async () => {
+  const btn = $('#btn-prints');
+  btn.disabled = true;
+  try {
+    await gh.gerarPrevias(dados.owner);
+    toast('Tirando novos prints dos sites. Leva uns 2 minutos; depois toque em ↻ Atualizar.');
+  } catch (e) { toast(e.message, true); }
+  finally { setTimeout(() => { btn.disabled = false; }, 60000); }
+});
 
 const tokenSalvo = lerToken();
 if (tokenSalvo) entrar(tokenSalvo);

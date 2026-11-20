@@ -151,6 +151,11 @@ export class GitHub {
     return { jaEstava: false, avisos };
   }
 
+  // Pede ao GitHub para tirar novos prints dos sites (workflow previas.yml do painel).
+  gerarPrevias(owner) {
+    return this.req('POST', `/repos/${owner}/${REPO_PAINEL}/actions/workflows/previas.yml/dispatches`, { ref: 'main' });
+  }
+
   async lerConfigDoCommit(owner, repo) {
     try {
       const c = await this.req('GET', `/repos/${owner}/${repo}/commits/${BRANCH_MANUTENCAO}`);
