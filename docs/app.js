@@ -139,10 +139,31 @@ function textoResposta(v) {
 
 const ROTULO = { ligado: 'No ar', desligado: 'Desligado', erro: 'Erro', 'sem-pages': 'Pages desativado' };
 
-function desenhar() {
-  const termo = $('#busca').value.trim().toLowerCase();
-  const visiveis = sites.filter((s) => !termo || `${s.cliente} ${s.id} ${s.url} ${s.notas}`.toLowerCase().includes(termo));
+// Miniatura ao vivo do site. O "sandbox" sem allow-same-origin isola o site
+// do painel (os sites ficam no mesmo domínio atosmilla.github.io e não podem
+// ler o token guardado no aparelho).
+function previa(s) {
+  if (!s.url) return '<div class="previa vazia" aria-hidden="true"></div>';
+  return `<a class="previa" href="${esc(s.url)}" target="_blank" rel="noopener" title="Abrir ${esc(s.cliente)}" aria-label="Abrir ${esc(s.cliente)}">
+    <iframe src="${esc(s.url)}" sandbox="allow-scripts" loading="lazy" tabindex="-1" aria-hidden="true" scrolling="no" referrerpolicy="no-referrer"></iframe>
+  </a>`;
+}
 
+// A busca só esconde/mostra cards, sem recarregar as miniaturas.
+function filtrar() {
+  const termo = $('#busca').value.trim().toLowerCase();
+  let algum = false;
+  document.querySelectorAll('#lista .site').forEach((el) => {
+    const s = sites.find((x) => x.id === el.dataset.id);
+    const ok = !termo || `${s.cliente} ${s.id} ${s.url} ${s.notas}`.toLowerCase().includes(termo);
+    el.hidden = !ok;
+    algum ||= ok;
+  });
+  const aviso = $('#sem-resultado');
+  if (aviso) { aviso.hidden = algum; aviso.textContent = `Nada encontrado para “${termo}”.`; }
+}
+
+function desenhar() {
   $('#n-total').textContent = sites.length;
   $('#n-ligados').textContent = sites.filter((s) => s.estado === 'ligado').length;
   $('#n-desligados').textContent = sites.filter((s) => s.estado === 'desligado').length;
@@ -151,21 +172,18 @@ function desenhar() {
     $('#lista').innerHTML = '<div class="vazio">Nenhum site no painel ainda.<br><br>Toque em <strong>+ Adicionar site</strong>.</div>';
     return;
   }
-  if (!visiveis.length) {
-    $('#lista').innerHTML = `<div class="vazio">Nada encontrado para “${esc(termo)}”.</div>`;
-    return;
-  }
 
-  $('#lista').innerHTML = visiveis.map((s) => {
+  $('#lista').innerHTML = '<div class="vazio" id="sem-resultado" hidden></div>' + sites.map((s) => {
     const podeAlternar = s.estado === 'ligado' || s.estado === 'desligado';
     return `
     <article class="site ${s.estado}" data-id="${esc(s.id)}">
       <div class="site-topo">
+        ${previa(s)}
         <div class="site-nome">
           <h3>${esc(s.cliente)}</h3>
           <div class="repo">${esc(s.id)}</div>
+          <span class="pilula ${s.estado}">${ROTULO[s.estado] || s.estado}</span>
         </div>
-        <span class="pilula ${s.estado}">${ROTULO[s.estado] || s.estado}</span>
         <label class="chave" title="${s.estado === 'ligado' ? 'Desligar site' : 'Ligar site'}">
           <input type="checkbox" data-acao="alternar" ${s.estado === 'ligado' ? 'checked' : ''} ${podeAlternar ? '' : 'disabled'}>
           <span></span>
@@ -186,6 +204,7 @@ function desenhar() {
       </div>
     </article>`;
   }).join('');
+  filtrar();
 }
 
 const acharSite = (el) => sites.find((s) => s.id === el.closest('.site').dataset.id);
@@ -368,7 +387,7 @@ document.querySelectorAll('.aba').forEach((b) => b.addEventListener('click', () 
   $('#aba-historico').hidden = b.dataset.aba !== 'historico';
   if (b.dataset.aba === 'historico') carregarHistorico();
 }));
-$('#busca').addEventListener('input', desenhar);
+$('#busca').addEventListener('input', filtrar);
 $('#btn-atualizar').addEventListener('click', carregarSites);
 
 const tokenSalvo = lerToken();
