@@ -3,7 +3,10 @@ import { GitHub, Dados, verificarUrl } from './github.js';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
-const LINK_TOKEN = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Central%20de%20Sites';
+// Nome do token muda por aparelho e data, porque o GitHub não aceita nomes repetidos.
+const APARELHO = /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone' : /Android/.test(navigator.userAgent) ? 'Android' : 'Computador';
+const LINK_TOKEN = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description='
+  + encodeURIComponent(`Central de Sites - ${APARELHO} ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`);
 
 let gh = null;
 let dados = null;     // instância de Dados
