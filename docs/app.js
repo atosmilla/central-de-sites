@@ -253,7 +253,9 @@ function cartao(s) {
       ${s.erro ? `<div class="site-notas" style="color:var(--off)">${esc(s.erro)}</div>` : ''}
       ${s.notas ? `<div class="site-notas">${esc(s.notas)}</div>` : ''}
       <div class="site-rodape">
-        ${situacaoDe(s) === 'pendente' ? '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>' : ''}
+        ${situacaoDe(s) === 'pendente'
+    ? '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>'
+    : '<button class="btn pequeno" data-acao="desconfirmar">↩ Voltar p/ pendentes</button>'}
         <button class="btn pequeno" data-acao="editar">Editar</button>
         <button class="btn pequeno" data-acao="testar">Testar</button>
         <a class="btn pequeno" href="https://github.com/${esc(s.id)}/settings/pages" target="_blank" rel="noopener">GitHub ↗</a>
@@ -328,6 +330,14 @@ $('#lista').addEventListener('click', async (ev) => {
     } catch (e) { toast(e.message, true); alvo.disabled = false; }
   }
 
+  if (acao === 'desconfirmar') {
+    alvo.disabled = true;
+    try {
+      await mudarSituacao(site, 'pendente');
+      toast(`↩ ${site.cliente} voltou para Pendentes.`);
+    } catch (e) { toast(e.message, true); alvo.disabled = false; }
+  }
+
   if (acao === 'editar') {
     const f = await modal({
       titulo: 'Editar site',
@@ -371,6 +381,9 @@ $('#lista').addEventListener('click', async (ev) => {
     if (!ok) return;
     try {
       await dados.alterar(`Remove ${site.id}`, (d) => {
+        const velho = d.sites.find((x) => x.id === site.id);
+        // guarda nome, cidade e notas para o caso de o site ser adicionado de novo
+        if (velho) d.removidos = { ...(d.removidos || {}), [site.id]: { cliente: velho.cliente, notas: velho.notas, cidade: velho.cidade } };
         d.sites = d.sites.filter((x) => x.id !== site.id);
         Dados.registrar(d, site.id, 'removido', true, 'Removido do painel (o site não foi alterado)');
       });
@@ -480,6 +493,13 @@ $('#btn-adicionar').addEventListener('click', async () => {
     await dados.alterar(`Adiciona ${novos.length} site(s)`, (d) => {
       for (const n of novos) {
         if (d.sites.some((s) => s.id === n.id)) continue;
+        const antigo = d.removidos && d.removidos[n.id];
+        if (antigo) {
+          if (antigo.cliente) n.cliente = antigo.cliente;
+          if (antigo.notas) n.notas = antigo.notas;
+          if (antigo.cidade) n.cidade = antigo.cidade;
+          delete d.removidos[n.id];
+        }
         d.sites.push(n);
         Dados.registrar(d, n.id, 'adicionado', true, 'Site adicionado ao painel');
       }
