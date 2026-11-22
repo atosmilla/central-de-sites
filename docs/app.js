@@ -155,13 +155,39 @@ $('#lista').addEventListener('error', (ev) => {
   if (ev.target.matches?.('.previa img')) ev.target.remove();
 }, true);
 
+// ---------- Pendentes x Clientes ----------
+// "pendente" = cliente ainda não confirmou; "cliente" = site já comprado.
+const CHAVE_CATEGORIA = 'central-de-sites:categoria';
+let categoria = (() => { try { return localStorage.getItem(CHAVE_CATEGORIA) || ''; } catch { return ''; } })();
+const situacaoDe = (s) => (s.situacao === 'cliente' ? 'cliente' : 'pendente');
+const contar = (c) => sites.filter((s) => situacaoDe(s) === c).length;
+const sitesDaCategoria = () => sites.filter((s) => situacaoDe(s) === categoria);
+
+function desenharCategorias() {
+  if (categoria !== 'cliente' && categoria !== 'pendente') categoria = contar('cliente') ? 'cliente' : 'pendente';
+  document.querySelectorAll('#categorias .categoria').forEach((b) => {
+    const ativa = b.dataset.categoria === categoria;
+    b.classList.toggle('ativa', ativa);
+    b.setAttribute('aria-selected', String(ativa));
+    b.querySelector('.categoria-n').textContent = contar(b.dataset.categoria);
+  });
+}
+
+$('#categorias').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.categoria');
+  if (!b || b.dataset.categoria === categoria) return;
+  categoria = b.dataset.categoria;
+  try { localStorage.setItem(CHAVE_CATEGORIA, categoria); } catch { /* ok */ }
+  desenhar();
+});
+
 // ---------- Cidades (seções) ----------
 const SEM_CIDADE = 'Sem cidade';
 const CHAVE_CIDADE = 'central-de-sites:cidade';
 let cidadeAtiva = (() => { try { return localStorage.getItem(CHAVE_CIDADE) || ''; } catch { return ''; } })();
 const cidadeDe = (s) => (s.cidade || '').trim() || SEM_CIDADE;
 const ordenarCidades = (a, b) => (a === SEM_CIDADE) - (b === SEM_CIDADE) || a.localeCompare(b, 'pt-BR');
-const listaCidades = () => [...new Set(sites.map(cidadeDe))].sort(ordenarCidades);
+const listaCidades = (lista = sitesDaCategoria()) => [...new Set(lista.map(cidadeDe))].sort(ordenarCidades);
 
 function desenharChips() {
   const cidades = listaCidades();
@@ -169,8 +195,9 @@ function desenharChips() {
   // Só vale a pena mostrar os filtros quando há mais de uma cidade.
   $('#cidades').hidden = cidades.length < 2;
   const chip = (valor, rotulo, n) => `<button class="chip ${cidadeAtiva === valor ? 'ativo' : ''}" data-cidade="${esc(valor)}">${esc(rotulo)} <span>${n}</span></button>`;
-  $('#cidades').innerHTML = chip('', 'Todas', sites.length)
-    + cidades.map((c) => chip(c, c, sites.filter((s) => cidadeDe(s) === c).length)).join('');
+  const lista = sitesDaCategoria();
+  $('#cidades').innerHTML = chip('', 'Todas', lista.length)
+    + cidades.map((c) => chip(c, c, lista.filter((s) => cidadeDe(s) === c).length)).join('');
 }
 
 $('#cidades').addEventListener('click', (ev) => {
@@ -226,6 +253,7 @@ function cartao(s) {
       ${s.erro ? `<div class="site-notas" style="color:var(--off)">${esc(s.erro)}</div>` : ''}
       ${s.notas ? `<div class="site-notas">${esc(s.notas)}</div>` : ''}
       <div class="site-rodape">
+        ${situacaoDe(s) === 'pendente' ? '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>' : ''}
         <button class="btn pequeno" data-acao="editar">Editar</button>
         <button class="btn pequeno" data-acao="testar">Testar</button>
         <a class="btn pequeno" href="https://github.com/${esc(s.id)}/settings/pages" target="_blank" rel="noopener">GitHub ↗</a>
@@ -235,18 +263,26 @@ function cartao(s) {
 }
 
 function desenhar() {
-  $('#n-total').textContent = sites.length;
-  $('#n-ligados').textContent = sites.filter((s) => s.estado === 'ligado').length;
-  $('#n-desligados').textContent = sites.filter((s) => s.estado === 'desligado').length;
+  desenharCategorias();
+  const lista = sitesDaCategoria();
+  $('#n-total').textContent = lista.length;
+  $('#n-ligados').textContent = lista.filter((s) => s.estado === 'ligado').length;
+  $('#n-desligados').textContent = lista.filter((s) => s.estado === 'desligado').length;
   desenharChips();
 
   if (!sites.length) {
     $('#lista').innerHTML = '<div class="vazio">Nenhum site no painel ainda.<br><br>Toque em <strong>+ Adicionar site</strong>.</div>';
     return;
   }
+  if (!lista.length) {
+    $('#lista').innerHTML = categoria === 'cliente'
+      ? '<div class="vazio">Nenhum cliente confirmado ainda.<br><br>Em <strong>Pendentes</strong>, toque em <strong>✓ Virou cliente</strong> quando o cliente comprar o site.</div>'
+      : '<div class="vazio">Nenhum site pendente. 🎉<br><br>Sites novos que você adicionar aparecem aqui até o cliente confirmar.</div>';
+    return;
+  }
 
   $('#lista').innerHTML = '<div class="vazio" id="sem-resultado" hidden></div>' + listaCidades().map((cidade) => {
-    const daqui = sites.filter((s) => cidadeDe(s) === cidade).sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
+    const daqui = lista.filter((s) => cidadeDe(s) === cidade).sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
     const fora = daqui.filter((s) => s.estado === 'desligado').length;
     return `
     <section class="grupo" data-cidade="${esc(cidade)}">
@@ -257,6 +293,16 @@ function desenhar() {
     </section>`;
   }).join('');
   filtrar();
+}
+
+async function mudarSituacao(site, situacao) {
+  await dados.alterar(`${situacao === 'cliente' ? 'Confirma' : 'Pendente'} ${site.id}`, (d) => {
+    const s = d.sites.find((x) => x.id === site.id);
+    if (s) s.situacao = situacao;
+    Dados.registrar(d, site.id, situacao === 'cliente' ? 'confirmado' : 'pendente', true, situacao === 'cliente' ? 'Virou cliente' : 'Voltou para pendentes');
+  });
+  site.situacao = situacao;
+  desenhar();
 }
 
 const acharSite = (el) => sites.find((s) => s.id === el.closest('.site').dataset.id);
@@ -274,6 +320,14 @@ $('#lista').addEventListener('click', async (ev) => {
     verificar(site);
   }
 
+  if (acao === 'confirmar') {
+    alvo.disabled = true;
+    try {
+      await mudarSituacao(site, 'cliente');
+      toast(`⭐ ${site.cliente} agora está em Clientes.`);
+    } catch (e) { toast(e.message, true); alvo.disabled = false; }
+  }
+
   if (acao === 'editar') {
     const f = await modal({
       titulo: 'Editar site',
@@ -281,7 +335,11 @@ $('#lista').addEventListener('click', async (ev) => {
       corpo: `
         <label>Nome do cliente / site<input name="cliente" value="${esc(site.cliente)}" required></label>
         <label>Cidade<input name="cidade" value="${esc(site.cidade || '')}" list="lista-cidades" placeholder="ex.: Barra Velha" autocomplete="off"></label>
-        <datalist id="lista-cidades">${listaCidades().filter((c) => c !== SEM_CIDADE).map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+        <label>Situação<select name="situacao">
+          <option value="pendente" ${situacaoDe(site) === 'pendente' ? 'selected' : ''}>Pendente (cliente ainda não confirmou)</option>
+          <option value="cliente" ${situacaoDe(site) === 'cliente' ? 'selected' : ''}>Cliente (site já comprado)</option>
+        </select></label>
+        <datalist id="lista-cidades">${listaCidades(sites).filter((c) => c !== SEM_CIDADE).map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
         <label>Anotações (ex.: vencimento, contato, valor)<textarea name="notas" rows="4">${esc(site.notas)}</textarea></label>`,
     });
     if (!f) return;
@@ -289,14 +347,18 @@ $('#lista').addEventListener('click', async (ev) => {
     const notas = f.get('notas');
     // Reaproveita a grafia de uma cidade já existente (ex.: "barra velha" → "Barra Velha").
     const digitada = f.get('cidade').trim().replace(/\s+/g, ' ');
-    const cidade = listaCidades().find((c) => c.localeCompare(digitada, 'pt-BR', { sensitivity: 'base' }) === 0 && c !== SEM_CIDADE) || digitada;
+    const cidade = listaCidades(sites).find((c) => c.localeCompare(digitada, 'pt-BR', { sensitivity: 'base' }) === 0 && c !== SEM_CIDADE) || digitada;
+    const situacao = f.get('situacao') === 'cliente' ? 'cliente' : 'pendente';
+    const mudou = situacao !== situacaoDe(site);
     try {
       await dados.alterar(`Edita ${site.id}`, (d) => {
         const s = d.sites.find((x) => x.id === site.id);
-        if (s) Object.assign(s, { cliente, notas, cidade });
+        if (s) Object.assign(s, { cliente, notas, cidade, situacao });
+        if (mudou) Dados.registrar(d, site.id, situacao === 'cliente' ? 'confirmado' : 'pendente', true, situacao === 'cliente' ? 'Virou cliente' : 'Voltou para pendentes');
       });
-      Object.assign(site, { cliente, notas, cidade });
+      Object.assign(site, { cliente, notas, cidade, situacao });
       desenhar();
+      if (mudou) toast(`${site.cliente} foi para ${situacao === 'cliente' ? 'Clientes' : 'Pendentes'}.`);
     } catch (e) { toast(e.message, true); }
   }
 
@@ -410,7 +472,7 @@ $('#btn-adicionar').addEventListener('click', async () => {
     try {
       const pages = await gh.pages(r.owner, r.repo);
       if (!pages) { toast(`${r.owner}/${r.repo}: não tem GitHub Pages ativo.`, true); continue; }
-      novos.push({ id: `${r.owner}/${r.repo}`, owner: r.owner, repo: r.repo, cliente: r.repo, notas: '', url: pages.html_url, original: null, adicionadoEm: new Date().toISOString() });
+      novos.push({ id: `${r.owner}/${r.repo}`, owner: r.owner, repo: r.repo, cliente: r.repo, notas: '', situacao: 'pendente', url: pages.html_url, original: null, adicionadoEm: new Date().toISOString() });
     } catch (e) { toast(`${r.owner}/${r.repo}: ${e.message}`, true); }
   }
   if (!novos.length) return;
@@ -422,13 +484,13 @@ $('#btn-adicionar').addEventListener('click', async () => {
         Dados.registrar(d, n.id, 'adicionado', true, 'Site adicionado ao painel');
       }
     });
-    toast(`${novos.length} site(s) adicionado(s).`);
+    toast(`${novos.length} site(s) adicionado(s) em Pendentes.`);
     carregarSites();
   } catch (e) { toast(e.message, true); }
 });
 
 // ---------- Histórico ----------
-const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido' };
+const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido', confirmado: '⭐ Virou cliente', pendente: '↩ Voltou p/ pendentes' };
 async function carregarHistorico() {
   try { await dados.carregar(); } catch (e) { toast(e.message, true); }
   const h = dados.dados.historico.slice(0, 200);
