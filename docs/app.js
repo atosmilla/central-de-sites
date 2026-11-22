@@ -1,5 +1,5 @@
 // Interface do painel Central de Sites (roda 100% no navegador).
-import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611221236';
+import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611221411';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
@@ -116,6 +116,7 @@ async function carregarSites() {
     sites = await Promise.all(dados.dados.sites.map(estadoDoSite));
     desenhar();
     sites.forEach(verificar);
+    completarCidades();
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -141,10 +142,11 @@ const ROTULO = { ligado: 'No ar', desligado: 'Desligado', erro: 'Erro', 'sem-pag
 
 // Miniatura: print do site gerado pelo robô do GitHub (workflow "Miniaturas dos sites"),
 // guardado no branch "previas" do repositório do painel. Imagem leve, sem rodar o site.
-const versaoPrevia = Math.floor(Date.now() / 600000); // renova o cache a cada 10 min
+let versaoPrevia = Math.floor(Date.now() / 600000); // renova o cache a cada 10 min
+const urlPrevias = (arquivo) => `https://raw.githubusercontent.com/${encodeURIComponent(dados.owner)}/${REPO_PAINEL}/previas/${encodeURIComponent(arquivo)}`;
 function previa(s) {
   const inicial = esc((s.cliente || s.repo).trim().charAt(0).toUpperCase());
-  const img = `https://raw.githubusercontent.com/${encodeURIComponent(dados.owner)}/${REPO_PAINEL}/previas/${encodeURIComponent(`${s.owner}__${s.repo}`)}.jpg?v=${versaoPrevia}`;
+  const img = `${urlPrevias(`${s.owner}__${s.repo}.jpg`)}?v=${versaoPrevia}`;
   const conteudo = `<span class="previa-inicial" aria-hidden="true">${inicial}</span><img src="${img}" alt="" loading="lazy" decoding="async">`;
   return s.url
     ? `<a class="previa" href="${esc(s.url)}" target="_blank" rel="noopener" title="Abrir ${esc(s.cliente)}" aria-label="Abrir ${esc(s.cliente)}">${conteudo}</a>`
@@ -154,6 +156,84 @@ function previa(s) {
 $('#lista').addEventListener('error', (ev) => {
   if (ev.target.matches?.('.previa img')) ev.target.remove();
 }, true);
+
+// Pede ao robô prints novos (só dos sites indicados, ou de todos) e, quando ficarem
+// prontos, troca as miniaturas sozinho — sem precisar tocar em Atualizar.
+async function tirarPrints(lista = []) {
+  const inicio = Date.now();
+  await gh.gerarPrevias(dados.owner, lista.map((s) => s.repo));
+  const nomes = lista.map((s) => `${s.owner}__${s.repo}`);
+  for (let i = 0; i < 40; i++) { // até ~5 minutos
+    await new Promise((r) => setTimeout(r, 8000));
+    try {
+      const indice = await fetch(`${urlPrevias('index.json')}?v=${Date.now()}`, { cache: 'no-store' }).then((r) => r.json());
+      const pronto = (n) => indice[n] && Date.parse(indice[n]) > inicio - 60000;
+      if (nomes.length ? nomes.every(pronto) : Object.keys(indice).some(pronto)) {
+        versaoPrevia = Date.now();
+        desenhar();
+        return true;
+      }
+    } catch { /* robô ainda trabalhando */ }
+  }
+  return false;
+}
+
+// ---------- Cidade automática ----------
+// Lê o próprio site e procura o endereço: "Barra Velha - SC", "Joinville/SC",
+// ou o campo addressLocality (dados estruturados do Google).
+const UFS = 'AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO';
+const semAcento = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+async function descobrirCidade(url) {
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return '';
+    const html = await r.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const texto = [doc.title, doc.querySelector('meta[name="description"]')?.content || '', doc.body?.textContent || ''].join('\n');
+    const votos = {};
+    const votar = (c, peso = 1) => { c = c.replace(/\s+/g, ' ').trim(); if (c.length > 2) votos[c] = (votos[c] || 0) + peso; };
+    for (const m of html.matchAll(/"addressLocality"\s*:\s*"([^"]{2,40})"/g)) votar(m[1], 5);
+    const P = '[A-ZÀ-Ý][a-zà-ÿ]+';
+    const re = new RegExp(`(${P}(?:\\s+(?:d[aeo]s?\\s+)?${P}){0,3})\\s*(?:-|–|—|/|,)\\s*(?:${UFS})\\b`, 'gu');
+    for (const m of texto.matchAll(re)) votar(m[1]);
+    // Cidades já usadas no painel também contam, se aparecerem no texto.
+    const t = semAcento(texto);
+    for (const c of listaCidades(sites)) {
+      if (c === SEM_CIDADE) continue;
+      const n = t.split(semAcento(c)).length - 1;
+      if (n) votar(c, n);
+    }
+    // "Centro Barra Velha" / "Itajuba Barra Velha": o bairro grudou na frente; conta para "Barra Velha".
+    for (const a of Object.keys(votos)) {
+      const b = Object.keys(votos).find((x) => x !== a && a.endsWith(` ${x}`));
+      if (b) { votos[b] += votos[a]; delete votos[a]; }
+    }
+    let melhor = Object.entries(votos).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    // Usa a grafia que já existe no painel (com acento certinho).
+    const igual = listaCidades(sites).find((c) => semAcento(c) === semAcento(melhor));
+    if (igual) melhor = igual;
+    return melhor;
+  } catch { return ''; }
+}
+
+// Sites sem cidade: tenta descobrir sozinho (uma vez por abertura do painel).
+const jaTentado = new Set();
+async function completarCidades() {
+  for (const site of sites.filter((x) => !(x.cidade || '').trim() && x.url && !jaTentado.has(x.id))) {
+    jaTentado.add(site.id);
+    const cidade = await descobrirCidade(site.url);
+    if (!cidade) continue;
+    try {
+      await dados.alterar(`Descobre a cidade de ${site.id}`, (d) => {
+        const x = d.sites.find((y) => y.id === site.id);
+        if (x && !(x.cidade || '').trim()) x.cidade = cidade;
+      });
+      site.cidade = cidade;
+      desenhar();
+      toast(`📍 ${site.cliente}: cidade ${cidade}.`);
+    } catch { /* tenta de novo na próxima vez */ }
+  }
+}
 
 // ---------- Pendentes x Clientes ----------
 // "pendente" = cliente ainda não confirmou; "cliente" = site já comprado.
@@ -489,6 +569,8 @@ $('#btn-adicionar').addEventListener('click', async () => {
     } catch (e) { toast(`${r.owner}/${r.repo}: ${e.message}`, true); }
   }
   if (!novos.length) return;
+  toast('Procurando a cidade no site…');
+  await Promise.all(novos.map(async (n) => { n.cidade = await descobrirCidade(n.url); }));
   try {
     await dados.alterar(`Adiciona ${novos.length} site(s)`, (d) => {
       for (const n of novos) {
@@ -497,15 +579,18 @@ $('#btn-adicionar').addEventListener('click', async () => {
         if (antigo) {
           if (antigo.cliente) n.cliente = antigo.cliente;
           if (antigo.notas) n.notas = antigo.notas;
-          if (antigo.cidade) n.cidade = antigo.cidade;
+          if (antigo.cidade && !n.cidade) n.cidade = antigo.cidade;
           delete d.removidos[n.id];
         }
         d.sites.push(n);
         Dados.registrar(d, n.id, 'adicionado', true, 'Site adicionado ao painel');
       }
     });
-    toast(`${novos.length} site(s) adicionado(s) em Pendentes.`);
-    carregarSites();
+    const cidades = novos.map((n) => n.cidade).filter(Boolean);
+    toast(`${novos.length} site(s) adicionado(s) em Pendentes.${cidades.length ? ` 📍 ${[...new Set(cidades)].join(', ')}` : ' Cidade não encontrada: toque em Editar para escolher.'}`);
+    await carregarSites();
+    toast('🖼 Tirando o print… aparece sozinho em 1 minuto, mais ou menos.');
+    tirarPrints(novos).then((ok) => ok && toast('🖼 Print pronto!')).catch(() => {});
   } catch (e) { toast(e.message, true); }
 });
 
@@ -532,10 +617,11 @@ $('#btn-prints').addEventListener('click', async () => {
   const btn = $('#btn-prints');
   btn.disabled = true;
   try {
-    await gh.gerarPrevias(dados.owner);
-    toast('Tirando novos prints dos sites. Leva uns 2 minutos; depois toque em ↻ Atualizar.');
+    const espera = tirarPrints();
+    toast('Tirando novos prints dos sites. As miniaturas trocam sozinhas em 1 ou 2 minutos.');
+    if (await espera) toast('🖼 Prints atualizados!');
   } catch (e) { toast(e.message, true); }
-  finally { setTimeout(() => { btn.disabled = false; }, 60000); }
+  finally { btn.disabled = false; }
 });
 
 const tokenSalvo = lerToken();

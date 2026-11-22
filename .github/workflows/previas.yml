@@ -1,18 +1,24 @@
 # Tira um print de cada site publicado no GitHub Pages da conta e guarda as
 # imagens no branch "previas". O painel mostra essas imagens como miniatura.
+# Quando o painel adiciona um site, ele chama este robô só para o site novo.
 name: Miniaturas dos sites
 
 on:
   schedule:
     - cron: '17 */6 * * *'   # a cada 6 horas
-  workflow_dispatch:         # botão "Atualizar prints" do painel
+  workflow_dispatch:         # botão "Prints" do painel e sites recém-adicionados
+    inputs:
+      sites:
+        description: 'Repositórios separados por vírgula (vazio = todos)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 concurrency:
   group: previas
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   previas:
@@ -21,20 +27,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Instalar navegador
+      # Começa com os prints que já existem, para não apagar os outros sites.
+      - name: Baixar prints atuais
         run: |
-          npm install --no-save playwright@1.49.1
-          npx playwright install --with-deps chromium
+          git clone -q --depth 1 -b previas "https://github.com/${GITHUB_REPOSITORY}.git" saida || mkdir -p saida
+          rm -rf saida/.git
+
+      # O Google Chrome já vem instalado na máquina do GitHub; só falta a biblioteca.
+      - name: Preparar
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.49.1
 
       - name: Tirar prints
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DONO: ${{ github.repository_owner }}
           REPO_PAINEL: ${{ github.event.repository.name }}
+          SITES: ${{ github.event.inputs.sites }}
         run: node .github/scripts/previas.mjs saida
 
       - name: Publicar no branch previas

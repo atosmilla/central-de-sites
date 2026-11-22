@@ -152,8 +152,9 @@ export class GitHub {
   }
 
   // Pede ao GitHub para tirar novos prints dos sites (workflow previas.yml do painel).
-  gerarPrevias(owner) {
-    return this.req('POST', `/repos/${owner}/${REPO_PAINEL}/actions/workflows/previas.yml/dispatches`, { ref: 'main' });
+  // repos vazio = print de todos os sites; senão, só desses (bem mais rápido).
+  gerarPrevias(owner, repos = []) {
+    return this.req('POST', `/repos/${owner}/${REPO_PAINEL}/actions/workflows/previas.yml/dispatches`, { ref: 'main', inputs: { sites: repos.join(',') } });
   }
 
   async lerConfigDoCommit(owner, repo) {

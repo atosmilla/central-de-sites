@@ -1,7 +1,7 @@
 // Gera um print (640x400) de cada site público com GitHub Pages da conta.
 // Arquivo de saída: <dono>__<repo>.jpg  +  index.json com a data de cada print.
-import { chromium } from 'playwright';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { chromium } from 'playwright-core';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const pasta = process.argv[2] || 'saida';
@@ -17,8 +17,10 @@ for (let page = 1; page <= 10; page++) {
   repos.push(...lote);
   if (lote.length < 100) break;
 }
+// SITES="a,b" = só esses (site recém-adicionado); vazio = todos.
+const so = (process.env.SITES || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 const alvos = repos
-  .filter((r) => r.has_pages && r.name !== painel)
+  .filter((r) => r.has_pages && r.name !== painel && (!so.length || so.includes(r.name.toLowerCase())))
   .map((r) => ({
     nome: `${r.owner.login}__${r.name}`,
     // O endereço padrão redireciona sozinho para o domínio próprio, se houver.
@@ -28,9 +30,10 @@ const alvos = repos
   }));
 
 console.log(`Sites encontrados: ${alvos.length}`);
-const navegador = await chromium.launch();
+const navegador = await chromium.launch({ channel: 'chrome' }); // Chrome já instalado no GitHub
 const contexto = await navegador.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 0.5 });
-const indice = {};
+let indice = {};
+try { indice = JSON.parse(await readFile(join(pasta, 'index.json'), 'utf8')); } catch { /* primeira vez */ }
 
 for (const alvo of alvos) {
   const pagina = await contexto.newPage();
