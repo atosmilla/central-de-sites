@@ -98,7 +98,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .btn.pequeno { padding: 5px 10px; font-size: 13px; }
 .btn:disabled { opacity: .55; cursor: wait; }
 
-.lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.lista { display: flex; flex-direction: column; gap: 26px; }
+.grupo-sites { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
 .site {
   background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio);
   padding: 16px 18px; box-shadow: var(--sombra);
@@ -178,7 +179,7 @@ dialog input, dialog textarea {
   main { padding: 16px; }
   .acoes-topo { margin-left: 0; width: 100%; }
   #busca { flex: 1; width: auto; }
-  .lista { grid-template-columns: 1fr; }
+  .grupo-sites { grid-template-columns: 1fr; }
 }
 
 /* Tela de entrada */
@@ -230,3 +231,20 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   .site-nome .repo { display: none; }
   .site-nome h3 { margin-bottom: 6px; }
 }
+
+/* Seções por cidade */
+.cidades { display: flex; gap: 8px; overflow-x: auto; margin: -4px 0 18px; padding-bottom: 4px; scrollbar-width: none; }
+.cidades::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--borda); background: var(--painel); color: var(--texto); white-space: nowrap;
+}
+.chip span { color: var(--suave); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.chip.ativo { background: var(--texto); color: var(--bg); border-color: var(--texto); }
+.chip.ativo span { color: inherit; opacity: .7; }
+.grupo-titulo {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: 17px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--borda);
+}
+.grupo-titulo small { font-size: 13px; font-weight: 400; color: var(--suave); }
+.txt-off { color: var(--off); }

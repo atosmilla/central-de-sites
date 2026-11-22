@@ -155,33 +155,56 @@ $('#lista').addEventListener('error', (ev) => {
   if (ev.target.matches?.('.previa img')) ev.target.remove();
 }, true);
 
-// A busca só esconde/mostra cards, sem recarregar as miniaturas.
+// ---------- Cidades (seções) ----------
+const SEM_CIDADE = 'Sem cidade';
+const CHAVE_CIDADE = 'central-de-sites:cidade';
+let cidadeAtiva = (() => { try { return localStorage.getItem(CHAVE_CIDADE) || ''; } catch { return ''; } })();
+const cidadeDe = (s) => (s.cidade || '').trim() || SEM_CIDADE;
+const ordenarCidades = (a, b) => (a === SEM_CIDADE) - (b === SEM_CIDADE) || a.localeCompare(b, 'pt-BR');
+const listaCidades = () => [...new Set(sites.map(cidadeDe))].sort(ordenarCidades);
+
+function desenharChips() {
+  const cidades = listaCidades();
+  if (cidadeAtiva && !cidades.includes(cidadeAtiva)) cidadeAtiva = '';
+  // Só vale a pena mostrar os filtros quando há mais de uma cidade.
+  $('#cidades').hidden = cidades.length < 2;
+  const chip = (valor, rotulo, n) => `<button class="chip ${cidadeAtiva === valor ? 'ativo' : ''}" data-cidade="${esc(valor)}">${esc(rotulo)} <span>${n}</span></button>`;
+  $('#cidades').innerHTML = chip('', 'Todas', sites.length)
+    + cidades.map((c) => chip(c, c, sites.filter((s) => cidadeDe(s) === c).length)).join('');
+}
+
+$('#cidades').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.chip');
+  if (!b) return;
+  cidadeAtiva = b.dataset.cidade;
+  try { localStorage.setItem(CHAVE_CIDADE, cidadeAtiva); } catch { /* ok */ }
+  desenharChips();
+  filtrar();
+});
+
+// Busca e filtro de cidade só escondem/mostram cards, sem recarregar as miniaturas.
 function filtrar() {
   const termo = $('#busca').value.trim().toLowerCase();
   let algum = false;
-  document.querySelectorAll('#lista .site').forEach((el) => {
-    const s = sites.find((x) => x.id === el.dataset.id);
-    const ok = !termo || `${s.cliente} ${s.id} ${s.url} ${s.notas}`.toLowerCase().includes(termo);
-    el.hidden = !ok;
-    algum ||= ok;
+  document.querySelectorAll('#lista .grupo').forEach((grupo) => {
+    const daCidade = !cidadeAtiva || grupo.dataset.cidade === cidadeAtiva;
+    let visiveis = 0;
+    grupo.querySelectorAll('.site').forEach((el) => {
+      const s = sites.find((x) => x.id === el.dataset.id);
+      const ok = daCidade && (!termo || `${s.cliente} ${s.id} ${s.url} ${s.notas} ${s.cidade || ''}`.toLowerCase().includes(termo));
+      el.hidden = !ok;
+      if (ok) visiveis++;
+    });
+    grupo.hidden = !visiveis;
+    algum ||= visiveis > 0;
   });
   const aviso = $('#sem-resultado');
-  if (aviso) { aviso.hidden = algum; aviso.textContent = `Nada encontrado para “${termo}”.`; }
+  if (aviso) { aviso.hidden = algum; aviso.textContent = termo ? `Nada encontrado para “${termo}”.` : 'Nenhum site nesta cidade.'; }
 }
 
-function desenhar() {
-  $('#n-total').textContent = sites.length;
-  $('#n-ligados').textContent = sites.filter((s) => s.estado === 'ligado').length;
-  $('#n-desligados').textContent = sites.filter((s) => s.estado === 'desligado').length;
-
-  if (!sites.length) {
-    $('#lista').innerHTML = '<div class="vazio">Nenhum site no painel ainda.<br><br>Toque em <strong>+ Adicionar site</strong>.</div>';
-    return;
-  }
-
-  $('#lista').innerHTML = '<div class="vazio" id="sem-resultado" hidden></div>' + sites.map((s) => {
-    const podeAlternar = s.estado === 'ligado' || s.estado === 'desligado';
-    return `
+function cartao(s) {
+  const podeAlternar = s.estado === 'ligado' || s.estado === 'desligado';
+  return `
     <article class="site ${s.estado}" data-id="${esc(s.id)}">
       <div class="site-topo">
         ${previa(s)}
@@ -209,6 +232,29 @@ function desenhar() {
         <button class="btn pequeno" data-acao="remover" style="margin-left:auto">Remover</button>
       </div>
     </article>`;
+}
+
+function desenhar() {
+  $('#n-total').textContent = sites.length;
+  $('#n-ligados').textContent = sites.filter((s) => s.estado === 'ligado').length;
+  $('#n-desligados').textContent = sites.filter((s) => s.estado === 'desligado').length;
+  desenharChips();
+
+  if (!sites.length) {
+    $('#lista').innerHTML = '<div class="vazio">Nenhum site no painel ainda.<br><br>Toque em <strong>+ Adicionar site</strong>.</div>';
+    return;
+  }
+
+  $('#lista').innerHTML = '<div class="vazio" id="sem-resultado" hidden></div>' + listaCidades().map((cidade) => {
+    const daqui = sites.filter((s) => cidadeDe(s) === cidade).sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
+    const fora = daqui.filter((s) => s.estado === 'desligado').length;
+    return `
+    <section class="grupo" data-cidade="${esc(cidade)}">
+      <h2 class="grupo-titulo">${esc(cidade)}
+        <small>${daqui.length} site${daqui.length > 1 ? 's' : ''}${fora ? ` · <span class="txt-off">${fora} desligado${fora > 1 ? 's' : ''}</span>` : ''}</small>
+      </h2>
+      <div class="grupo-sites">${daqui.map(cartao).join('')}</div>
+    </section>`;
   }).join('');
   filtrar();
 }
@@ -234,17 +280,22 @@ $('#lista').addEventListener('click', async (ev) => {
       ok: 'Salvar',
       corpo: `
         <label>Nome do cliente / site<input name="cliente" value="${esc(site.cliente)}" required></label>
+        <label>Cidade<input name="cidade" value="${esc(site.cidade || '')}" list="lista-cidades" placeholder="ex.: Barra Velha" autocomplete="off"></label>
+        <datalist id="lista-cidades">${listaCidades().filter((c) => c !== SEM_CIDADE).map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
         <label>Anotações (ex.: vencimento, contato, valor)<textarea name="notas" rows="4">${esc(site.notas)}</textarea></label>`,
     });
     if (!f) return;
     const cliente = f.get('cliente').trim() || site.cliente;
     const notas = f.get('notas');
+    // Reaproveita a grafia de uma cidade já existente (ex.: "barra velha" → "Barra Velha").
+    const digitada = f.get('cidade').trim().replace(/\s+/g, ' ');
+    const cidade = listaCidades().find((c) => c.localeCompare(digitada, 'pt-BR', { sensitivity: 'base' }) === 0 && c !== SEM_CIDADE) || digitada;
     try {
       await dados.alterar(`Edita ${site.id}`, (d) => {
         const s = d.sites.find((x) => x.id === site.id);
-        if (s) Object.assign(s, { cliente, notas });
+        if (s) Object.assign(s, { cliente, notas, cidade });
       });
-      Object.assign(site, { cliente, notas });
+      Object.assign(site, { cliente, notas, cidade });
       desenhar();
     } catch (e) { toast(e.message, true); }
   }
