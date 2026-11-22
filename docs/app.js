@@ -1,5 +1,5 @@
 // Interface do painel Central de Sites (roda 100% no navegador).
-import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js';
+import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611221236';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
