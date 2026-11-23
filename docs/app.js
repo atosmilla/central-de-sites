@@ -1,5 +1,5 @@
 // Interface do painel Central de Sites (roda 100% no navegador).
-import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611221411';
+import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611232017';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
@@ -219,7 +219,7 @@ async function descobrirCidade(url) {
 // Sites sem cidade: tenta descobrir sozinho (uma vez por abertura do painel).
 const jaTentado = new Set();
 async function completarCidades() {
-  for (const site of sites.filter((x) => !(x.cidade || '').trim() && x.url && !jaTentado.has(x.id))) {
+  for (const site of sites.filter((x) => !(x.cidade || '').trim() && x.url && situacaoDe(x) !== 'meu' && !jaTentado.has(x.id))) {
     jaTentado.add(site.id);
     const cidade = await descobrirCidade(site.url);
     if (!cidade) continue;
@@ -239,7 +239,9 @@ async function completarCidades() {
 // "pendente" = cliente ainda não confirmou; "cliente" = site já comprado.
 const CHAVE_CATEGORIA = 'central-de-sites:categoria';
 let categoria = (() => { try { return localStorage.getItem(CHAVE_CATEGORIA) || ''; } catch { return ''; } })();
-const situacaoDe = (s) => (s.situacao === 'cliente' ? 'cliente' : 'pendente');
+// "meu" = o seu próprio site: fica numa seção só dele, fora de Pendentes e Clientes.
+const situacaoDe = (s) => (s.situacao === 'cliente' || s.situacao === 'meu' ? s.situacao : 'pendente');
+const NOME_SITUACAO = { pendente: 'Pendentes', cliente: 'Clientes', meu: 'Meu site' };
 const contar = (c) => sites.filter((s) => situacaoDe(s) === c).length;
 const sitesDaCategoria = () => sites.filter((s) => situacaoDe(s) === categoria);
 
@@ -294,7 +296,7 @@ function filtrar() {
   const termo = $('#busca').value.trim().toLowerCase();
   let algum = false;
   document.querySelectorAll('#lista .grupo').forEach((grupo) => {
-    const daCidade = !cidadeAtiva || grupo.dataset.cidade === cidadeAtiva;
+    const daCidade = !cidadeAtiva || grupo.dataset.cidade === cidadeAtiva || grupo.classList.contains('grupo-meu');
     let visiveis = 0;
     grupo.querySelectorAll('.site').forEach((el) => {
       const s = sites.find((x) => x.id === el.dataset.id);
@@ -333,9 +335,8 @@ function cartao(s) {
       ${s.erro ? `<div class="site-notas" style="color:var(--off)">${esc(s.erro)}</div>` : ''}
       ${s.notas ? `<div class="site-notas">${esc(s.notas)}</div>` : ''}
       <div class="site-rodape">
-        ${situacaoDe(s) === 'pendente'
-    ? '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>'
-    : '<button class="btn pequeno" data-acao="desconfirmar">↩ Voltar p/ pendentes</button>'}
+        ${{ pendente: '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>',
+    cliente: '<button class="btn pequeno" data-acao="desconfirmar">↩ Voltar p/ pendentes</button>' }[situacaoDe(s)] || ''}
         <button class="btn pequeno" data-acao="editar">Editar</button>
         <button class="btn pequeno" data-acao="testar">Testar</button>
         <a class="btn pequeno" href="https://github.com/${esc(s.id)}/settings/pages" target="_blank" rel="noopener">GitHub ↗</a>
@@ -356,14 +357,22 @@ function desenhar() {
     $('#lista').innerHTML = '<div class="vazio">Nenhum site no painel ainda.<br><br>Toque em <strong>+ Adicionar site</strong>.</div>';
     return;
   }
+  // Seu próprio site aparece sempre no topo, numa seção só dele.
+  const meus = sites.filter((s) => situacaoDe(s) === 'meu');
+  const secaoMeu = meus.length ? `
+    <section class="grupo grupo-meu" data-cidade="">
+      <h2 class="grupo-titulo">⭐ Meu site</h2>
+      <div class="grupo-sites">${meus.map(cartao).join('')}</div>
+    </section>` : '';
+
   if (!lista.length) {
-    $('#lista').innerHTML = categoria === 'cliente'
+    $('#lista').innerHTML = secaoMeu + (categoria === 'cliente'
       ? '<div class="vazio">Nenhum cliente confirmado ainda.<br><br>Em <strong>Pendentes</strong>, toque em <strong>✓ Virou cliente</strong> quando o cliente comprar o site.</div>'
-      : '<div class="vazio">Nenhum site pendente. 🎉<br><br>Sites novos que você adicionar aparecem aqui até o cliente confirmar.</div>';
+      : '<div class="vazio">Nenhum site pendente. 🎉<br><br>Sites novos que você adicionar aparecem aqui até o cliente confirmar.</div>');
     return;
   }
 
-  $('#lista').innerHTML = '<div class="vazio" id="sem-resultado" hidden></div>' + listaCidades().map((cidade) => {
+  $('#lista').innerHTML = secaoMeu + '<div class="vazio" id="sem-resultado" hidden></div>' + listaCidades().map((cidade) => {
     const daqui = lista.filter((s) => cidadeDe(s) === cidade).sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
     const fora = daqui.filter((s) => s.estado === 'desligado').length;
     return `
@@ -428,6 +437,7 @@ $('#lista').addEventListener('click', async (ev) => {
         <label>Situação<select name="situacao">
           <option value="pendente" ${situacaoDe(site) === 'pendente' ? 'selected' : ''}>Pendente (cliente ainda não confirmou)</option>
           <option value="cliente" ${situacaoDe(site) === 'cliente' ? 'selected' : ''}>Cliente (site já comprado)</option>
+          <option value="meu" ${situacaoDe(site) === 'meu' ? 'selected' : ''}>Meu site (fica separado, no topo)</option>
         </select></label>
         <datalist id="lista-cidades">${listaCidades(sites).filter((c) => c !== SEM_CIDADE).map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
         <label>Anotações (ex.: vencimento, contato, valor)<textarea name="notas" rows="4">${esc(site.notas)}</textarea></label>`,
@@ -438,17 +448,19 @@ $('#lista').addEventListener('click', async (ev) => {
     // Reaproveita a grafia de uma cidade já existente (ex.: "barra velha" → "Barra Velha").
     const digitada = f.get('cidade').trim().replace(/\s+/g, ' ');
     const cidade = listaCidades(sites).find((c) => c.localeCompare(digitada, 'pt-BR', { sensitivity: 'base' }) === 0 && c !== SEM_CIDADE) || digitada;
-    const situacao = f.get('situacao') === 'cliente' ? 'cliente' : 'pendente';
+    const situacao = ['cliente', 'meu'].includes(f.get('situacao')) ? f.get('situacao') : 'pendente';
     const mudou = situacao !== situacaoDe(site);
+    const acaoHist = { cliente: 'confirmado', pendente: 'pendente', meu: 'meu' }[situacao];
+    const textoHist = { cliente: 'Virou cliente', pendente: 'Voltou para pendentes', meu: 'Marcado como meu site' }[situacao];
     try {
       await dados.alterar(`Edita ${site.id}`, (d) => {
         const s = d.sites.find((x) => x.id === site.id);
         if (s) Object.assign(s, { cliente, notas, cidade, situacao });
-        if (mudou) Dados.registrar(d, site.id, situacao === 'cliente' ? 'confirmado' : 'pendente', true, situacao === 'cliente' ? 'Virou cliente' : 'Voltou para pendentes');
+        if (mudou) Dados.registrar(d, site.id, acaoHist, true, textoHist);
       });
       Object.assign(site, { cliente, notas, cidade, situacao });
       desenhar();
-      if (mudou) toast(`${site.cliente} foi para ${situacao === 'cliente' ? 'Clientes' : 'Pendentes'}.`);
+      if (mudou) toast(`${site.cliente} foi para ${NOME_SITUACAO[situacao]}.`);
     } catch (e) { toast(e.message, true); }
   }
 
@@ -595,7 +607,7 @@ $('#btn-adicionar').addEventListener('click', async () => {
 });
 
 // ---------- Histórico ----------
-const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido', confirmado: '⭐ Virou cliente', pendente: '↩ Voltou p/ pendentes' };
+const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido', confirmado: '⭐ Virou cliente', pendente: '↩ Voltou p/ pendentes', meu: '⭐ Meu site' };
 async function carregarHistorico() {
   try { await dados.carregar(); } catch (e) { toast(e.message, true); }
   const h = dados.dados.historico.slice(0, 200);
