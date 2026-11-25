@@ -1,5 +1,5 @@
 // Interface do painel Central de Sites (roda 100% no navegador).
-import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611232017';
+import { GitHub, Dados, verificarUrl, REPO_PAINEL } from './github.js?v=202611251717';
 
 const $ = (s) => document.querySelector(s);
 const CHAVE_TOKEN = 'central-de-sites:token';
@@ -240,13 +240,22 @@ async function completarCidades() {
 const CHAVE_CATEGORIA = 'central-de-sites:categoria';
 let categoria = (() => { try { return localStorage.getItem(CHAVE_CATEGORIA) || ''; } catch { return ''; } })();
 // "meu" = o seu próprio site: fica numa seção só dele, fora de Pendentes e Clientes.
-const situacaoDe = (s) => (s.situacao === 'cliente' || s.situacao === 'meu' ? s.situacao : 'pendente');
-const NOME_SITUACAO = { pendente: 'Pendentes', cliente: 'Clientes', meu: 'Meu site' };
+// "aguardando" = você mandou o site para o cliente e está esperando a resposta.
+const SITUACOES = ['pendente', 'aguardando', 'cliente', 'meu'];
+const situacaoDe = (s) => (SITUACOES.includes(s.situacao) ? s.situacao : 'pendente');
+const NOME_SITUACAO = { pendente: 'Pendentes', aguardando: 'Aguardando resposta', cliente: 'Clientes', meu: 'Meu site' };
+const HIST_SITUACAO = {
+  pendente: ['pendente', 'Voltou para pendentes'],
+  aguardando: ['aguardando', 'Enviado ao cliente: aguardando resposta'],
+  cliente: ['confirmado', 'Virou cliente'],
+  meu: ['meu', 'Marcado como meu site'],
+};
+const diasDesde = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000));
 const contar = (c) => sites.filter((s) => situacaoDe(s) === c).length;
 const sitesDaCategoria = () => sites.filter((s) => situacaoDe(s) === categoria);
 
 function desenharCategorias() {
-  if (categoria !== 'cliente' && categoria !== 'pendente') categoria = contar('cliente') ? 'cliente' : 'pendente';
+  if (!['pendente', 'aguardando', 'cliente'].includes(categoria)) categoria = contar('cliente') ? 'cliente' : 'pendente';
   document.querySelectorAll('#categorias .categoria').forEach((b) => {
     const ativa = b.dataset.categoria === categoria;
     b.classList.toggle('ativa', ativa);
@@ -331,11 +340,15 @@ function cartao(s) {
       <div class="site-info">
         <span data-resposta="${esc(s.id)}">${textoResposta(verificacoes[s.id])}</span>
         ${s.tipoPublicacao ? `<span>Publicação: ${esc(s.tipoPublicacao)}</span>` : ''}
+        ${situacaoDe(s) === 'aguardando' && s.aguardandoDesde ? `<span class="espera">⏳ ${(() => { const n = diasDesde(s.aguardandoDesde); return n ? `aguardando há ${n} dia${n > 1 ? 's' : ''}` : 'enviado hoje'; })()}</span>` : ''}
       </div>
       ${s.erro ? `<div class="site-notas" style="color:var(--off)">${esc(s.erro)}</div>` : ''}
       ${s.notas ? `<div class="site-notas">${esc(s.notas)}</div>` : ''}
       <div class="site-rodape">
-        ${{ pendente: '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>',
+        ${{ pendente: '<button class="btn pequeno" data-acao="aguardar">📨 Enviei ao cliente</button>'
+      + '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>',
+    aguardando: '<button class="btn pequeno confirmar" data-acao="confirmar">✓ Virou cliente</button>'
+      + '<button class="btn pequeno nao-quis" data-acao="nao-quis">✕ Não quis</button>',
     cliente: '<button class="btn pequeno" data-acao="desconfirmar">↩ Voltar p/ pendentes</button>' }[situacaoDe(s)] || ''}
         <button class="btn pequeno" data-acao="editar">Editar</button>
         <button class="btn pequeno" data-acao="testar">Testar</button>
@@ -366,9 +379,10 @@ function desenhar() {
     </section>` : '';
 
   if (!lista.length) {
-    $('#lista').innerHTML = secaoMeu + (categoria === 'cliente'
-      ? '<div class="vazio">Nenhum cliente confirmado ainda.<br><br>Em <strong>Pendentes</strong>, toque em <strong>✓ Virou cliente</strong> quando o cliente comprar o site.</div>'
-      : '<div class="vazio">Nenhum site pendente. 🎉<br><br>Sites novos que você adicionar aparecem aqui até o cliente confirmar.</div>');
+    $('#lista').innerHTML = secaoMeu + ({
+      cliente: '<div class="vazio">Nenhum cliente confirmado ainda.<br><br>Toque em <strong>✓ Virou cliente</strong> quando o cliente comprar o site.</div>',
+      aguardando: '<div class="vazio">Nenhum site aguardando resposta.<br><br>Em <strong>Pendentes</strong>, toque em <strong>📨 Enviei ao cliente</strong> quando mandar o site para ele ver.<br>Ou, ao adicionar um site, escolha <strong>Aguardando resposta</strong>.</div>',
+    }[categoria] || '<div class="vazio">Nenhum site pendente. 🎉<br><br>Sites novos que você adicionar aparecem aqui até o cliente confirmar.</div>');
     return;
   }
 
@@ -387,12 +401,25 @@ function desenhar() {
 }
 
 async function mudarSituacao(site, situacao) {
-  await dados.alterar(`${situacao === 'cliente' ? 'Confirma' : 'Pendente'} ${site.id}`, (d) => {
+  const extra = situacao === 'aguardando' ? { aguardandoDesde: new Date().toISOString() } : {};
+  await dados.alterar(`${NOME_SITUACAO[situacao]}: ${site.id}`, (d) => {
     const s = d.sites.find((x) => x.id === site.id);
-    if (s) s.situacao = situacao;
-    Dados.registrar(d, site.id, situacao === 'cliente' ? 'confirmado' : 'pendente', true, situacao === 'cliente' ? 'Virou cliente' : 'Voltou para pendentes');
+    if (s) Object.assign(s, { situacao }, extra);
+    Dados.registrar(d, site.id, HIST_SITUACAO[situacao][0], true, HIST_SITUACAO[situacao][1]);
   });
-  site.situacao = situacao;
+  Object.assign(site, { situacao }, extra);
+  desenhar();
+}
+
+async function removerSite(site, mensagem) {
+  await dados.alterar(`Remove ${site.id}`, (d) => {
+    const velho = d.sites.find((x) => x.id === site.id);
+    // guarda nome, cidade e notas para o caso de o site ser adicionado de novo
+    if (velho) d.removidos = { ...(d.removidos || {}), [site.id]: { cliente: velho.cliente, notas: velho.notas, cidade: velho.cidade } };
+    d.sites = d.sites.filter((x) => x.id !== site.id);
+    Dados.registrar(d, site.id, 'removido', true, mensagem);
+  });
+  sites = sites.filter((s) => s !== site);
   desenhar();
 }
 
@@ -419,6 +446,27 @@ $('#lista').addEventListener('click', async (ev) => {
     } catch (e) { toast(e.message, true); alvo.disabled = false; }
   }
 
+  if (acao === 'aguardar') {
+    alvo.disabled = true;
+    try {
+      await mudarSituacao(site, 'aguardando');
+      toast(`📨 ${site.cliente} foi para Aguardando resposta.`);
+    } catch (e) { toast(e.message, true); alvo.disabled = false; }
+  }
+
+  if (acao === 'nao-quis') {
+    const ok = await modal({
+      titulo: `${site.cliente} não quis o site?`,
+      corpo: '<p>O site sai do painel. O site em si <strong>não é alterado</strong> e continua no ar do jeito que está.</p><p style="color:var(--suave);font-size:14px">Se o cliente mudar de ideia, é só adicionar de novo: o nome, a cidade e as anotações voltam.</p>',
+      ok: 'Remover do painel', perigo: true,
+    });
+    if (!ok) return;
+    try {
+      await removerSite(site, 'Cliente não quis o site: removido do painel');
+      toast(`${site.cliente} saiu do painel.`);
+    } catch (e) { toast(e.message, true); }
+  }
+
   if (acao === 'desconfirmar') {
     alvo.disabled = true;
     try {
@@ -436,6 +484,7 @@ $('#lista').addEventListener('click', async (ev) => {
         <label>Cidade<input name="cidade" value="${esc(site.cidade || '')}" list="lista-cidades" placeholder="ex.: Barra Velha" autocomplete="off"></label>
         <label>Situação<select name="situacao">
           <option value="pendente" ${situacaoDe(site) === 'pendente' ? 'selected' : ''}>Pendente (cliente ainda não confirmou)</option>
+          <option value="aguardando" ${situacaoDe(site) === 'aguardando' ? 'selected' : ''}>Aguardando resposta do cliente</option>
           <option value="cliente" ${situacaoDe(site) === 'cliente' ? 'selected' : ''}>Cliente (site já comprado)</option>
           <option value="meu" ${situacaoDe(site) === 'meu' ? 'selected' : ''}>Meu site (fica separado, no topo)</option>
         </select></label>
@@ -448,17 +497,17 @@ $('#lista').addEventListener('click', async (ev) => {
     // Reaproveita a grafia de uma cidade já existente (ex.: "barra velha" → "Barra Velha").
     const digitada = f.get('cidade').trim().replace(/\s+/g, ' ');
     const cidade = listaCidades(sites).find((c) => c.localeCompare(digitada, 'pt-BR', { sensitivity: 'base' }) === 0 && c !== SEM_CIDADE) || digitada;
-    const situacao = ['cliente', 'meu'].includes(f.get('situacao')) ? f.get('situacao') : 'pendente';
+    const situacao = SITUACOES.includes(f.get('situacao')) ? f.get('situacao') : 'pendente';
     const mudou = situacao !== situacaoDe(site);
-    const acaoHist = { cliente: 'confirmado', pendente: 'pendente', meu: 'meu' }[situacao];
-    const textoHist = { cliente: 'Virou cliente', pendente: 'Voltou para pendentes', meu: 'Marcado como meu site' }[situacao];
+    const [acaoHist, textoHist] = HIST_SITUACAO[situacao];
+    const aguardandoDesde = mudou && situacao === 'aguardando' ? new Date().toISOString() : site.aguardandoDesde;
     try {
       await dados.alterar(`Edita ${site.id}`, (d) => {
         const s = d.sites.find((x) => x.id === site.id);
-        if (s) Object.assign(s, { cliente, notas, cidade, situacao });
+        if (s) Object.assign(s, { cliente, notas, cidade, situacao }, aguardandoDesde ? { aguardandoDesde } : {});
         if (mudou) Dados.registrar(d, site.id, acaoHist, true, textoHist);
       });
-      Object.assign(site, { cliente, notas, cidade, situacao });
+      Object.assign(site, { cliente, notas, cidade, situacao }, aguardandoDesde ? { aguardandoDesde } : {});
       desenhar();
       if (mudou) toast(`${site.cliente} foi para ${NOME_SITUACAO[situacao]}.`);
     } catch (e) { toast(e.message, true); }
@@ -471,17 +520,7 @@ $('#lista').addEventListener('click', async (ev) => {
       ok: 'Remover', perigo: true,
     });
     if (!ok) return;
-    try {
-      await dados.alterar(`Remove ${site.id}`, (d) => {
-        const velho = d.sites.find((x) => x.id === site.id);
-        // guarda nome, cidade e notas para o caso de o site ser adicionado de novo
-        if (velho) d.removidos = { ...(d.removidos || {}), [site.id]: { cliente: velho.cliente, notas: velho.notas, cidade: velho.cidade } };
-        d.sites = d.sites.filter((x) => x.id !== site.id);
-        Dados.registrar(d, site.id, 'removido', true, 'Removido do painel (o site não foi alterado)');
-      });
-      sites = sites.filter((s) => s !== site);
-      desenhar();
-    } catch (e) { toast(e.message, true); }
+    try { await removerSite(site, 'Removido do painel (o site não foi alterado)'); } catch (e) { toast(e.message, true); }
   }
 });
 
@@ -548,7 +587,12 @@ $('#btn-adicionar').addEventListener('click', async () => {
       <details>
         <summary style="cursor:pointer;color:var(--suave);font-size:14px">Não achou? Adicionar manualmente</summary>
         <label style="margin-top:10px">Repositório (dono/nome)<input name="manual" placeholder="ex.: minhaempresa/site-cliente" autocapitalize="off"></label>
-      </details>`,
+      </details>
+      <label>Colocar em<select name="destino">
+        <option value="pendente" ${categoria === 'pendente' ? 'selected' : ''}>Pendentes</option>
+        <option value="aguardando" ${categoria === 'aguardando' ? 'selected' : ''}>Aguardando resposta (já mandei ao cliente)</option>
+        <option value="cliente" ${categoria === 'cliente' ? 'selected' : ''}>Clientes (já comprou)</option>
+      </select></label>`,
     aoAbrir: () => {
       const jaTem = new Set(dados.dados.sites.map((s) => s.id));
       gh.reposComPages().then((lista) => {
@@ -572,12 +616,13 @@ $('#btn-adicionar').addEventListener('click', async () => {
     if (owner && repo) alvos.push({ owner, repo });
     else toast('Formato manual inválido. Use dono/nome.', true);
   }
+  const destino = ['aguardando', 'cliente'].includes(f.get('destino')) ? f.get('destino') : 'pendente';
   const novos = [];
   for (const r of alvos) {
     try {
       const pages = await gh.pages(r.owner, r.repo);
       if (!pages) { toast(`${r.owner}/${r.repo}: não tem GitHub Pages ativo.`, true); continue; }
-      novos.push({ id: `${r.owner}/${r.repo}`, owner: r.owner, repo: r.repo, cliente: r.repo, notas: '', situacao: 'pendente', url: pages.html_url, original: null, adicionadoEm: new Date().toISOString() });
+      novos.push({ id: `${r.owner}/${r.repo}`, owner: r.owner, repo: r.repo, cliente: r.repo, notas: '', situacao: destino, ...(destino === 'aguardando' ? { aguardandoDesde: new Date().toISOString() } : {}), url: pages.html_url, original: null, adicionadoEm: new Date().toISOString() });
     } catch (e) { toast(`${r.owner}/${r.repo}: ${e.message}`, true); }
   }
   if (!novos.length) return;
@@ -599,7 +644,7 @@ $('#btn-adicionar').addEventListener('click', async () => {
       }
     });
     const cidades = novos.map((n) => n.cidade).filter(Boolean);
-    toast(`${novos.length} site(s) adicionado(s) em Pendentes.${cidades.length ? ` 📍 ${[...new Set(cidades)].join(', ')}` : ' Cidade não encontrada: toque em Editar para escolher.'}`);
+    toast(`${novos.length} site(s) adicionado(s) em ${NOME_SITUACAO[destino]}.${cidades.length ? ` 📍 ${[...new Set(cidades)].join(', ')}` : ' Cidade não encontrada: toque em Editar para escolher.'}`);
     await carregarSites();
     toast('🖼 Tirando o print… aparece sozinho em 1 minuto, mais ou menos.');
     tirarPrints(novos).then((ok) => ok && toast('🖼 Print pronto!')).catch(() => {});
@@ -607,7 +652,7 @@ $('#btn-adicionar').addEventListener('click', async () => {
 });
 
 // ---------- Histórico ----------
-const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido', confirmado: '⭐ Virou cliente', pendente: '↩ Voltou p/ pendentes', meu: '⭐ Meu site' };
+const NOME_ACAO = { ligar: '🟢 Ligar', desligar: '🔴 Desligar', adicionado: '➕ Adicionado', removido: '➖ Removido', confirmado: '⭐ Virou cliente', pendente: '↩ Voltou p/ pendentes', meu: '⭐ Meu site', aguardando: '📨 Aguardando resposta' };
 async function carregarHistorico() {
   try { await dados.carregar(); } catch (e) { toast(e.message, true); }
   const h = dados.dados.historico.slice(0, 200);

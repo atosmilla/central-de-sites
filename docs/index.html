@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Central de Sites">
   <title>Central de Sites</title>
-  <link rel="stylesheet" href="style.css?v=202611232017">
+  <link rel="stylesheet" href="style.css?v=202611251717">
   <link rel="icon" href="icone.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icone.png">
 </head>
@@ -48,11 +48,15 @@
       <nav class="categorias" id="categorias" role="tablist" aria-label="Situação dos sites">
         <button class="categoria" data-categoria="pendente" role="tab">
           <strong>Pendentes <span class="categoria-n">0</span></strong>
-          <small>ainda não confirmados</small>
+          <small>não confirmados</small>
+        </button>
+        <button class="categoria" data-categoria="aguardando" role="tab">
+          <strong>Aguardando <span class="categoria-n">0</span></strong>
+          <small>esperando resposta</small>
         </button>
         <button class="categoria" data-categoria="cliente" role="tab">
           <strong>Clientes <span class="categoria-n">0</span></strong>
-          <small>sites já comprados</small>
+          <small>já comprados</small>
         </button>
       </nav>
       <div class="resumo">
@@ -92,6 +96,6 @@
   </dialog>
 
   <div id="toasts"></div>
-  <script src="app.js?v=202611232017" type="module"></script>
+  <script src="app.js?v=202611251717" type="module"></script>
 </body>
 </html>
